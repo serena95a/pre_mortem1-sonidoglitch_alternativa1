@@ -1,9 +1,13 @@
+// Estas variables globales se asumen disponibles en el entorno de Canvas,
+// aunque no se usan directamente en este sketch.
+
 
 let phoneScreenImg; // Variable para almacenar la imagen de la pantalla del celular
 let counter = 0; // Contador de toques
-let MAX_TOUCHES = Math.floor(Math.random() * 70) + 15;//const MAX_TOUCHES = 50 Número máximo de toques antes de la "muerte"
+let MAX_TOUCHES = Math.floor(Math.random() * 70) + 15; // Número máximo de toques antes de la "muerte"
 let glitches = []; // Array para almacenar los glitches individuales
 let isDead = false; // Estado de la aplicación: ¿el celular ha "muerto"?
+let finalImage; // Variable para almacenar la imagen final de "muerte"
 
 let currentMessage = "Toca la pantalla para iniciar el ciclo..."; // Mensaje que se mostrará en el canvas
 
@@ -11,6 +15,12 @@ let currentMessage = "Toca la pantalla para iniciar el ciclo..."; // Mensaje que
 let osc; // El objeto oscilador de p5.sound
 let noise; // Objeto de ruido de p5.sound
 let isAudioStarted = false; // Bandera para controlar si el audio ya ha iniciado
+
+// VARIABLES PARA EL REINICIO AUTOMÁTICO
+// deathTime ya no es estrictamente necesario para el setTimeout, pero se mantiene si se usa para otra cosa.
+// let deathTime = 0;
+const restartDelay = 2 * 60 * 1000; // 2 minutos en milisegundos (2 * 60 segundos * 1000 ms/seg)
+let restartTimeoutId; // Para almacenar el ID del timeout y poder cancelarlo si fuera necesario
 
 // La función 'sketch' contiene el código p5.js y se pasa a la instancia de p5.
 const sketch = (p) => {
@@ -20,6 +30,8 @@ const sketch = (p) => {
         // Se carga tu propia imagen 'smartphone_screen.PNG'.
         // Asegúrate de haber subido la imagen al editor de p5.js primero.
         phoneScreenImg = p.loadImage('smartphone_screen.png');
+        // Carga la nueva imagen 'cargafinal.png' que se mostrará al final.
+        finalImage = p.loadImage('cargafinal.png');
     };
 
     // p.setup se ejecuta una vez al inicio del sketch, después de p.preload.
@@ -49,27 +61,18 @@ const sketch = (p) => {
     // p.draw se ejecuta continuamente, creando el bucle de animación.
     p.draw = () => {
         if (isDead) {
-            // Si el celular está "muerto", la pantalla se pone completamente negra.
-            p.background(0); // Fondo negro.
-            p.fill(255, 0, 0); // Color rojo para el mensaje de MORTEM.
-            p.textSize(p.width * 0.15); // Tamaño de texto responsivo basado en el ancho del canvas.
-            p.text("MORTEM", p.width / 2, p.height / 2); // Dibuja el mensaje MORTEM.
-
-            // Mensaje final en la parte inferior del canvas
-            p.fill(255); // Color blanco para el mensaje de estado
-            p.textSize(p.width * 0.05); // Tamaño más pequeño para el mensaje de estado
-            p.text("El dispositivo ha cumplido su ciclo.", p.width / 2, p.height * 0.7);
-            p.text("Descansa en paz digital.", p.width / 2, p.height * 0.75);
+            // Si el celular está "muerto", la pantalla se reemplaza por 'cargafinal.png'.
+            // La imagen se dibuja cubriendo todo el canvas.
+            p.image(finalImage, 0, 0, p.width, p.height);
 
             // Detener el audio cuando el dispositivo está "muerto"
-            // Esta sección actúa como una redundancia y se asegura de que .stop() siempre se llame
-            // cuando el dispositivo está muerto, sin depender de 'isAudioStarted'.
-            osc.stop(); // Detiene COMPLETAMENTE el oscilador
-            noise.stop(); // Detiene COMPLETAMENTE el ruido
+            if (osc.isStarted) osc.stop(); // Solo detener si ya está reproduciendo
+            if (noise.isStarted) noise.stop(); // Solo detener si ya está reproduciendo
             isAudioStarted = false; // Resetea la bandera para evitar intentos de detener un audio ya parado
 
-            p.noLoop(); // Detiene el bucle draw() de p5.js, la animación se detiene.
-            return; // Sale de la función draw, no dibuja más nada.
+            // IMPORTANTE: p.noLoop() se ha eliminado de aquí para permitir que draw siga mostrando la imagen final
+            // y para que el setTimeout programado en touchStarted pueda ejecutarse.
+            return; // Sale de la función draw, no dibuja más nada de lo "normal" del juego.
         }
 
         // Dibuja la imagen de la pantalla del celular como fondo.
@@ -97,7 +100,7 @@ const sketch = (p) => {
     p.touchStarted = () => {
         // Asegura que el contexto de audio se inicie con la primera interacción del usuario
         // Y SOLO si el dispositivo NO está muerto.
-        if (!isDead && !isAudioStarted) { // <-- ¡IMPORTANTE! Se añadió '!isDead' aquí.
+        if (!isDead && !isAudioStarted) {
             p.userStartAudio();
             // Asegura que los osciladores estén iniciados cuando el audio global lo esté.
             // Esto es importante si fueron detenidos con .stop() en algún momento.
@@ -186,13 +189,16 @@ const sketch = (p) => {
             // Si el contador llega al máximo, el celular "muere".
             if (counter >= MAX_TOUCHES) {
                 isDead = true;
-                currentMessage = "El dispositivo ha cumplido su ciclo."; // Este mensaje será reemplazado por MORTEM y el mensaje final en draw
+                // deathTime = p.millis(); // Ya no es estrictamente necesario para el setTimeout
+                currentMessage = "El dispositivo ha cumplido su ciclo."; // Este mensaje será reemplazado por la imagen en draw
                 // Detiene el audio inmediatamente en el momento de la muerte
                 if (isAudioStarted) {
                     osc.stop();
                     noise.stop();
                     isAudioStarted = false; // Resetea la bandera
                 }
+                // Programa el reinicio después del delay
+                restartTimeoutId = setTimeout(resetSketch, restartDelay);
             }
         }
         return false; // Evita el comportamiento predeterminado del navegador para eventos táctiles (como el scroll).
@@ -205,10 +211,31 @@ const sketch = (p) => {
 
         // Si el sketch estaba detenido (muerto), se reanuda temporalmente para asegurar un redibujo correcto
         // después del redimensionamiento, pero luego p.draw lo volverá a detener si 'isDead' sigue siendo true.
+        // Esto ya no es tan crítico porque p.draw ya no se detiene con p.noLoop()
         if (isDead) {
-            p.loop();
+            p.loop(); // Asegura que el bucle esté activo para mostrar la imagen final
         }
     };
+
+    // Función para reiniciar el sketch a su estado inicial
+    function resetSketch() {
+        counter = 0;
+        MAX_TOUCHES = Math.floor(Math.random() * 70) + 15; // Re-randomiza el número máximo de toques
+        glitches = [];
+        isDead = false;
+        currentMessage = "Toca la pantalla para iniciar el ciclo...";
+        isAudioStarted = false; // Asegúrate de que el audio se reinicie correctamente
+
+        // Reinicia los osciladores si es necesario.
+        // No es necesario llamar a .start() si ya están iniciados en setup,
+        // pero sí asegurarse de que su volumen esté en 0.
+        osc.amp(0);
+        noise.amp(0);
+
+        p.loop(); // Reanuda el bucle draw() si se detuvo por alguna razón inesperada
+        // Limpia cualquier timeout pendiente para evitar múltiples reinicios si se toca antes de que termine el delay.
+        clearTimeout(restartTimeoutId);
+    }
 };
 
 // Crea una nueva instancia de p5.js y pasa el objeto 'sketch' a ella.
