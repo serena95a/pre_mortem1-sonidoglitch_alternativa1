@@ -8,7 +8,7 @@ let MAX_TOUCHES = Math.floor(Math.random() * 70) + 15; // Número máximo de toq
 let glitches = []; // Array para almacenar los glitches individuales
 let isDead = false; // Estado de la aplicación: ¿el celular ha "muerto"?
 let finalImage; // Variable para almacenar la imagen final de "muerte"
-let imagenglitchImg; // NUEVA VARIABLE: Variable para almacenar la imagen que se usará para los glitches
+let imagenglitchImg; // Variable para almacenar la imagen que se usará para los glitches
 
 let currentMessage = "Toca la pantalla para iniciar el ciclo..."; // Mensaje que se mostrará en el canvas
 
@@ -108,9 +108,9 @@ const sketch = (p) => {
         }
 
         // Dibuja el contador en el centro de la pantalla.
-        p.fill(255); // Color blanco para el contador.
-        p.textSize(p.width * 0.1); // Tamaño de texto responsivo.
-        p.text(counter, p.width / 2, p.height / 2); // Muestra el valor actual del contador.
+        // p.fill(255); // Color blanco para el contador.
+        // p.textSize(p.width * 0.1); // Tamaño de texto responsivo.
+        // p.text(counter, p.width / 2, p.height / 2); // Muestra el valor actual del contador.
 
         // Dibuja el mensaje de estado en la parte inferior del canvas.
         p.fill(255); // Color blanco para el mensaje.
@@ -166,7 +166,6 @@ const sketch = (p) => {
             osc.freq(oscFreq, 0.15, p.frameCount + 1); // Vuelve a su frecuencia mapeada
 
             // --- FIN DE MODIFICACIONES DE AUDIO ---
-
 
             // Generar un número de glitches basado en el progreso del contador.
             // Aumentado para una aparición con progresión (menos denso al inicio)
@@ -242,7 +241,7 @@ const sketch = (p) => {
 
             // Limitar el número total de glitches para evitar sobrecarga de rendimiento.
             // Esto asegura que el array de glitches no crezca indefinidamente.
-            const maxGlitchesToKeep = 500; // Se mantiene en 500 como en tu código original.
+            const maxGlitchesToKeep = 1000; // Mantenido en 1000, puedes ajustar si es muy denso
             if (glitches.length > maxGlitchesToKeep) {
                 glitches.splice(0, glitches.length - maxGlitchesToKeep); // Elimina los glitches más antiguos.
             }
