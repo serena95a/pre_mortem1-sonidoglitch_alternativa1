@@ -18,16 +18,14 @@ let noise; // Objeto de ruido de p5.sound
 let isAudioStarted = false; // Bandera para controlar si el audio ya ha iniciado
 
 // VARIABLES PARA EL REINICIO AUTOMÁTICO
-// deathTime ya no es estrictamente necesario para el setTimeout, pero se mantiene si se usa para otra cosa.
-// let deathTime = 0;
 const restartDelay = 2 * 60 * 1000; // 2 minutos en milisegundos (2 * 60 segundos * 1000 ms/seg)
 let restartTimeoutId; // Para almacenar el ID del timeout y poder cancelarlo si fuera necesario
 
-// --- INICIO DE NUEVAS VARIABLES PARA WEBSOCKET Y SKETCH 3 ---
-let socket;
-let isSketch3Active = false; // Bandera para controlar si Sketch 3 debe estar activo
-let sketch3Timer = 0; // Temporizador para controlar la duración del Sketch 3 (opcional)
-// --- FIN DE NUEVAS VARIABLES ---
+// Variables para la nueva funcionalidad de la cruz
+let cruzImg; // Variable para almacenar la imagen de la cruz
+let mostrarCruz = false; // Bandera para controlar si la cruz debe mostrarse
+let cruzX = 0; // Posición X de la cruz (se actualizará con el toque)
+let cruzY = 0; // Posición Y de la cruz (se actualizará con el toque)
 
 
 // La función 'sketch' contiene el código p5.js y se pasa a la instancia de p5.
@@ -39,9 +37,11 @@ const sketch = (p) => {
         // Asegúrate de haber subido la imagen al editor de p5.js primero.
         phoneScreenImg = p.loadImage('smartphone_screen.png');
         // Carga la nueva imagen 'cargafinal.png' que se mostrará al final.
-        finalImage = p.loadImage('cargafinal.png');
+        finalImage = p.loadImage('cargafinal1.png');
         // Carga la imagen 'imagenglitch.png' para usarla en los glitches.
         imagenglitchImg = p.loadImage('imagenglitch.png'); // Carga la imagen de glitch
+        // Carga la imagen 'd.jpg' para la cruz (ajusta el nombre del archivo si es diferente)
+        cruzImg = p.loadImage('a.jpg');
     };
 
     // p.setup se ejecuta una vez al inicio del sketch, después de p.preload.
@@ -66,71 +66,28 @@ const sketch = (p) => {
         noise = new p5.Noise('white'); // Crea un generador de ruido blanco
         noise.amp(0); // Inicializa el volumen a 0
         noise.start(); // Inicia el ruido, pero no será audible hasta que el volumen sea > 0
-
-        // --- INICIO DE CONFIGURACIÓN DE WEBSOCKET ---
-        // Inicialización del WebSocket
-        // Asegúrate de reemplazar 'wss://server-7di9.onrender.com' con la URL de tu servidor WebSocket
-        socket = new WebSocket('wss://server-7di9.onrender.com'); 
-        socket.onopen = (event) => {
-            console.log("🟢 Conexión WebSocket abierta.", event);
-        };
-        socket.onmessage = (event) => {
-            let data;
-            try {
-                data = JSON.parse(event.data);
-            } catch (e) {
-                console.warn("Mensaje no JSON recibido:", event.data);
-                return;
-            }
-
-            // Lógica para activar/desactivar Sketch 3
-            if (data.type === "launchSketch3") {
-                isSketch3Active = data.active;
-                console.log("Estado de Sketch 3 actualizado:", isSketch3Active);
-                if (isSketch3Active) {
-                    sketch3Timer = p.millis(); // Reinicia el temporizador cuando se activa
-                }
-            }
-            // Puedes añadir más condiciones para otros tipos de mensajes si los necesitas
-        };
-        socket.onerror = (event) => {
-            console.error("❌ Error WebSocket:", event);
-        };
-        socket.onclose = (event) => {
-            console.log("🔴 Conexión WebSocket cerrada:", event);
-        };
-        // --- FIN DE CONFIGURACIÓN DE WEBSOCKET ---
     };
 
     // p.draw se ejecuta continuamente, creando el bucle de animación.
     p.draw = () => {
-        // --- INICIO DE LÓGICA DE RENDERIZADO CONDICIONAL PARA SKETCH 3 ---
-        if (isSketch3Active) {
-            // Si Sketch 3 está activo, dibuja solo Sketch 3
-            runSketch3(); // Llama a la función que dibuja tu Sketch 3
-            
-            // Opcional: Desactivar Sketch 3 después de un tiempo (ej. 5 segundos)
-            if (p.millis() - sketch3Timer > 5000) { 
-                isSketch3Active = false;
-                console.log("Sketch 3 desactivado automáticamente después de 5 segundos.");
-            }
-            return; // Muy importante: sale de p.draw para no ejecutar el código del sketch principal
-        }
-        // --- FIN DE LÓGICA DE RENDERIZADO CONDICIONAL ---
-
-
         if (isDead) {
             // Si el celular está "muerto", la pantalla se reemplaza por 'cargafinal.png'.
             // La imagen se dibuja cubriendo todo el canvas.
-            p.image(finalImage, 0, 0, p.width, p.height);
+            p.image(cruzImg, 0, 0, p.width, p.height); // Dibuja la imagen de la cruz como fondo principal
+
+            // Si mostrarCruz es verdadero, dibuja la imagen final en la posición del toque
+            if (mostrarCruz === true) {
+                p.blendMode(p.ADD); // Modo de mezcla para superponer y "sumar" colores
+                // Ajusta el tamaño de finalImage según tus necesidades, aquí lo he puesto fijo como en tu ejemplo
+                p.image(finalImage, cruzX, cruzY, 1600, 2000);
+                p.blendMode(p.BLEND); // Restablece el modo de mezcla a normal
+            }
 
             // Detener el audio cuando el dispositivo está "muerto"
             if (osc.isStarted) osc.stop(); // Solo detener si ya está reproduciendo
             if (noise.isStarted) noise.stop(); // Solo detener si ya está reproduciendo
             isAudioStarted = false; // Resetea la bandera para evitar intentos de detener un audio ya parado
 
-            // IMPORTANTE: p.noLoop() se ha eliminado de aquí para permitir que draw siga mostrando la imagen final
-            // y para que el setTimeout programado en touchStarted pueda ejecutarse.
             return; // Sale de la función draw, no dibuja más nada de lo "normal" del juego.
         }
 
@@ -171,19 +128,23 @@ const sketch = (p) => {
 
     // p.touchStarted se ejecuta cuando se detecta un toque o clic en la pantalla.
     p.touchStarted = () => {
+        // Si el celular está "muerto", activa la visualización de la cruz y actualiza su posición.
+        if (isDead) {
+            mostrarCruz = true;
+            cruzX = p.mouseX; // Usa p.mouseX para la posición X del toque
+            cruzY = p.mouseY; // Usa p.mouseY para la posición Y del toque
+            return false; // Si el celular ya está "muerto", no hay interacción adicional.
+        }
+
         // Asegura que el contexto de audio se inicie con la primera interacción del usuario
         // Y SOLO si el dispositivo NO está muerto.
         if (!isDead && !isAudioStarted) {
             p.userStartAudio();
             // Asegura que los osciladores estén iniciados cuando el audio global lo esté.
-            // Esto es importante si fueron detenidos con .stop() o si nunca se iniciaron.
-            if (!osc.isStarted) osc.start();
-            if (!noise.isStarted) noise.start();
+            // Esto es importante si fueron detenidos con .stop() en algún momento.
+            osc.start();
+            noise.start();
             isAudioStarted = true;
-        }
-
-        if (isDead) {
-            return false; // Si el celular ya está "muerto", no hay interacción.
         }
 
         // Incrementar el contador si no ha llegado al máximo.
@@ -310,23 +271,18 @@ const sketch = (p) => {
 
             // Si el contador llega al máximo, el celular "muere".
             if (counter >= MAX_TOUCHES) {
-                isDead = true;
-                currentMessage = "El dispositivo ha cumplido su ciclo."; // Este mensaje será reemplazado por la imagen en draw
-                // Detiene el audio inmediatamente en el momento de la muerte
-                if (isAudioStarted) {
-                    osc.stop();
-                    noise.stop();
-                    isAudioStarted = false; // Resetea la bandera
-                }
-                // Programa el reinicio después del delay
-                restartTimeoutId = setTimeout(resetSketch, restartDelay);
-
-                // --- NUEVA ADICIÓN: Comunicar al padre que el sketch está "muerto" ---
-                window.parent.postMessage({ type: 'isDead', value: true }, '*');
-                // --- FIN DE NUEVA ADICIÓN ---
+                // Llama a la función triggerDeath para manejar la lógica de "muerte"
+                triggerDeath();
             }
         }
         return false; // Evita el comportamiento predeterminado del navegador para eventos táctiles (como el scroll).
+    };
+
+    // p.mouseReleased se ejecuta cuando se suelta el clic o el toque.
+    p.mouseReleased = function () {
+        if (isDead) {
+            mostrarCruz = false; // Oculta la cruz al soltar
+        }
     };
 
     // p.windowResized se ejecuta automáticamente cuando la ventana del navegador cambia de tamaño.
@@ -340,11 +296,28 @@ const sketch = (p) => {
         }
     };
 
+    // Función para manejar la lógica cuando el sketch "muere"
+    function triggerDeath() {
+        isDead = true;
+        currentMessage = "El dispositivo ha cumplido su ciclo."; // Este mensaje será reemplazado por la imagen en draw
+        // Detiene el audio inmediatamente en el momento de la muerte
+        if (isAudioStarted) {
+            osc.stop();
+            noise.stop();
+            isAudioStarted = false; // Resetea la bandera
+        }
+        // Programa el reinicio después del delay
+        restartTimeoutId = setTimeout(resetSketch, restartDelay);
+
+        // Comunicar al padre que el sketch está "muerto"
+        window.parent.postMessage({ type: 'isDead', value: true }, '*');
+    }
+
     // Función para reiniciar el sketch a su estado inicial
     function resetSketch() {
         console.log("Reiniciando sketch..."); // Mensaje para depuración
         counter = 0;
-        MAX_TOUCHES = Math.floor(p.random() * 70) + 15; // Re-randomiza el número máximo de toques
+        MAX_TOUCHES = Math.floor(p.random(70)) + 15; // Re-randomiza el número máximo de toques
         glitches = [];
         isDead = false;
         currentMessage = "Toca la pantalla para iniciar el ciclo...";
@@ -358,25 +331,9 @@ const sketch = (p) => {
         // Limpia cualquier timeout pendiente para evitar múltiples reinicios si se toca antes de que termine el delay.
         clearTimeout(restartTimeoutId);
 
-        // --- NUEVA ADICIÓN: Comunicar al padre que el sketch ya no está "muerto" ---
+        // Comunicar al padre que el sketch ya no está "muerto"
         window.parent.postMessage({ type: 'isDead', value: false }, '*');
-        // --- FIN DE NUEVA ADICIÓN ---
     }
-
-    // --- INICIO DE FUNCIÓN SKETCH 3 (EJEMPLO) ---
-    // Esta es la función que dibuja tu "Sketch 3" cuando se activa por WebSocket.
-    // Puedes reemplazar el contenido de esta función con la lógica de dibujo de tu Sketch 3.
-    function runSketch3() {
-        p.background(0, 100, 100); // Fondo azul brillante para Sketch 3
-        p.fill(255);
-        p.noStroke();
-        p.ellipse(p.width / 2, p.height / 2, 150 + 50 * p.sin(p.frameCount * 0.05));
-        p.textAlign(p.CENTER, p.CENTER);
-        p.textSize(40);
-        p.fill(0);
-        p.text("¡Sketch 3 Activo!", p.width / 2, p.height / 2);
-    }
-    // --- FIN DE FUNCIÓN SKETCH 3 ---
 };
 
 // Crea una nueva instancia de p5.js y pasa el objeto 'sketch' a ella.
